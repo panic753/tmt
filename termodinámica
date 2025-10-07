@@ -1,0 +1,34 @@
+# ESPECIFICACIÓN: SOLUCIÓN A LA MASA BARIÓNICA (TMT)
+
+**Documento:** Corrección de la Masa del Protón
+**Fecha:** 2025-10-07
+
+## 1. Fundamento Lógico: Origen de la Masa Inercial
+
+El 99% de la masa del protón no puede atribuirse directamente al Mecanismo de Higgs. La Teoría Masa-Temperatura (TMT) postula que esta fracción es una **corrección termodinámica** del campo inercial.
+
+La masa efectiva m(T) se define por la temperatura local (T):
+
+$$m(T) = m_0 \left(1 + \frac{\beta}{T}\right)$$
+
+Donde $\beta$ es la constante termo-geométrica.
+
+## 2. Derivación de la Fracción de Masa
+
+La fracción (f) de masa atribuible al término de corrección $\beta/T$ (independiente de la masa inercial base $m_0$) es:
+
+$$f = \frac{\beta}{\beta + T}$$
+
+## 3. Demostración Cuantitativa
+
+Para que el término de corrección represente el **99%** de la masa total ($\mathbf{f = 0.99}$), se requiere una temperatura crítica extremadamente baja (T):
+
+| Parámetro | Valor | Conclusión |
+| :--- | :--- | :--- |
+| Fracción Deseada (f) | 0.99 (99%) | La TMT explica el 99% de la masa del protón. |
+| Constante $\beta$ | $\approx \pi/10 \text{ K}$ | Un valor de $\beta$ consistente con la TMT. |
+| **Temperatura Crítica (T)** | $\approx 3.17 \text{ mK}$ | La masa "perdida" del protón requiere una temperatura interna de 3.17 milikelvin. |
+
+## 4. Archivo de Implementación
+
+Para la implementación directa de esta lógica, consulte el archivo **`Proton_Mass_Solver.py`**.
