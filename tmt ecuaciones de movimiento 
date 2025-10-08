@@ -1,0 +1,191 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import hashlib
+from datetime import datetime
+
+# -------------------------------
+# Constantes físicas
+# -------------------------------
+G     = 6.67430e-11    # m^3 kg^-1 s^-2
+c     = 2.99792458e8   # m/s
+hbar  = 1.054571817e-34  # J·s
+k_B   = 1.380649e-23   # J/K
+M_sun = 1.989e30       # kg
+M_Pl  = 2.176434e-8    # kg
+
+T_0 = (c**3 * hbar) / (k_B * M_Pl**2)  # ~10^32 K
+
+# -------------------------------
+# Parámetros del objeto y TMT
+# -------------------------------
+M      = 10 * M_sun   # 10 masas solares
+beta   = np.pi / 10   # 0.314 K (constante TMT)
+
+# Campo escalar y potencial
+Lambda = 1e35         # J/m^3 (escala del campo)
+m_phi  = 1e31 / c**2  # kg (masa efectiva del campo)
+lmbd   = 1e-4         # acoplamiento cuártico
+K      = 1e20         # Pa·m^2 (rigidez del gradiente)
+ell    = 500          # m (perfil radial, 0.5 km)
+
+# Materia termodinámica
+n      = 1e34         # m^-3 (densidad numérica)
+T      = 1e6          # K (temperatura interna)
+
+# -------------------------------
+# Funciones del modelo
+# -------------------------------
+def phi(r):
+    """Perfil adimensional del campo escalar."""
+    return np.exp(-r / ell)
+
+def dphi_dr(r):
+    """Derivada radial de phi(r)."""
+    return -(1 / ell) * np.exp(-r / ell)
+
+def V(phi_val):
+    """Potencial V(phi) en unidades de Pa (J/m^3)."""
+    x = phi_val
+    return 0.5 * (m_phi * c**2)**2 * (x / Lambda)**2 + 0.25 * lmbd * (x / Lambda)**4 * Lambda**2
+
+def rho_phi(r):
+    """Densidad de energía del campo escalar en Pa."""
+    grad = (K / (2 * c**2)) * (dphi_dr(r)**2)
+    return grad + V(phi(r))
+
+def P_phi(r):
+    """Presión del campo escalar en Pa."""
+    grad = (K / (2 * c**2)) * (dphi_dr(r)**2)
+    return grad - V(phi(r))
+
+def P_term(R):
+    """Presión térmica de la materia."""
+    return n * k_B * T
+
+def P_grav_scale(M, R):
+    """Escala de presión gravitacional ≃ G M^2 / R^4."""
+    return G * M**2 / (R**4)
+
+def m_T(m_0, T):
+    """Masa termodinámica m(T) = m0 * (1 + β/T)."""
+    return m_0 * (1 + beta / T)
+
+def mu_r(M, r):
+    """Función métrica μ(r) = 2GM/(c^2 r)."""
+    return 2 * G * M / (c**2 * r)
+
+# -------------------------------
+# Cálculo del radio de equilibrio r_min
+# -------------------------------
+def equilibrium_radius(M, a=10.0, b=1e6, it=100):
+    """
+    Encuentra R tal que P_grav_scale = P_phi + P_term por bisección.
+    a, b en metros definen el bracket inicial.
+    """
+    def f(R):
+        return P_grav_scale(M, R) - (P_phi(R) + P_term(R))
+
+    fa, fb = f(a), f(b)
+    # Expandir el bracket si no hay cambio de signo
+    for _ in range(20):
+        if fa * fb <= 0:
+            break
+        a *= 0.5
+        b *= 2.0
+        fa, fb = f(a), f(b)
+    if fa * fb > 0:
+        raise RuntimeError("No se encontró equilibrio; ajusta parámetros o rango.")
+
+    # Bisección
+    for _ in range(it):
+        mid = 0.5 * (a + b)
+        fm  = f(mid)
+        if fa * fm <= 0:
+            b, fb = mid, fm
+        else:
+            a, fa = mid, fm
+    return 0.5 * (a + b)
+
+# -------------------------------
+# Ejecutar simulación
+# -------------------------------
+# Rango de temperaturas para m(T)
+T_range = np.logspace(-12, 12, 100)
+m_values = m_T(M, T_range)
+
+# Calcular r_min y rangos radiales
+r_min_val = equilibrium_radius(M)
+r_s       = 2 * G * M / c**2
+r_range   = np.logspace(np.log10(r_min_val), np.log10(r_min_val * 1e3), 200)
+
+# Evaluar densidad, presión, SEC y métrica
+rho_vals = rho_phi(r_range)
+P_vals   = P_phi(r_range)
+SEC_vals = rho_vals + 3 * P_vals
+mu_vals  = mu_r(M, r_range)
+
+# -------------------------------
+# Visualización
+# -------------------------------
+plt.figure(figsize=(12, 10))
+
+# Masa efectiva vs Temperatura
+plt.subplot(2, 2, 1)
+plt.plot(T_range, m_values / M_sun)
+plt.xscale('log')
+plt.xlabel('Temperatura (K)')
+plt.ylabel('Masa efectiva (M$_\odot$)')
+plt.title('TMT: $m(T)=m_0\\,(1+\\beta/T)$')
+plt.grid(True)
+
+# Presión del campo escalar
+plt.subplot(2, 2, 2)
+plt.plot(r_range / 1e3, P_vals)
+plt.xscale('log')
+plt.xlabel('Radio (km)')
+plt.ylabel('$P_\\phi$ (Pa)')
+plt.title('Presión del Campo Escalar')
+plt.grid(True)
+
+# Métrica μ(r)
+plt.subplot(2, 2, 3)
+plt.plot(r_range / 1e3, mu_vals)
+plt.axhline(1, linestyle='--', label='Horizonte (μ=1)')
+plt.xscale('log')
+plt.xlabel('Radio (km)')
+plt.ylabel('$\\mu(r)$')
+plt.title('Métrica: Casi Horizonte')
+plt.legend()
+plt.grid(True)
+
+# Violación de SEC
+plt.subplot(2, 2, 4)
+plt.plot(r_range / 1e3, SEC_vals)
+plt.axhline(0, linestyle='--', label='SEC límite')
+plt.xscale('log')
+plt.xlabel('Radio (km)')
+plt.ylabel('$\\rho_\\phi+3P_\\phi$ (Pa)')
+plt.title('Violación de SEC')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# -------------------------------
+# Resultados clave
+# -------------------------------
+print(f"Radio Schwarzschild r_s: {r_s/1e3:.2f} km")
+print(f"Radio mínimo   r_min: {r_min_val/1e3:.2f} km  (r_min/r_s = {r_min_val/r_s:.2f})")
+print(f"μ(r_min):       {mu_r(M, r_min_val):.3f}")
+print(f"SEC(r_min):     {SEC_vals[np.argmin(np.abs(r_range-r_min_val))]:.3e} Pa")
+
+# -------------------------------
+# Hash para protección
+# -------------------------------
+tmt_content = (
+    f"TMT V2.0 Sello Pitagórico {datetime.now()} "
+    f"A={A},B={B},K={K},ell={ell},n={n},T={T},M={M},r_min={r_min_val:.3e}"
+)
+hash_value = hashlib.sha256(tmt_content.encode()).hexdigest()
+print(f"Hash SHA-256 de esta versión: {hash_value}")
