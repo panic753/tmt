@@ -1,0 +1,143 @@
+"""
+TMT: Rebote térmico con regulador ρ_c(T) y masa m(T) explícitas
+----------------------------------------------------------------
+Elegí entre dos formas de regulador y una EoS efectiva con m(T):
+
+Radiación base:             ρ_rad(a) = ρ0 * a^{-4}
+Temperatura:                T(a)     = T_ref / a
+Ley Masatérmica:            m(T)     = m0 * (1 + β/T)
+
+Opción regulador (elige una):
+  (A) ρ_c(T) = ρ_c0 / (1 + β/T)         # cota ↓ a alta T (rebote más temprano)
+  (B) ρ_c(T) = ρ_c0 * (1 + β/T)         # cota ↑ a alta T (más permisivo)
+
+EoS efectiva (opcional) con m(T):
+  ρ_eff(a) = ρ_rad(a) * F_m(T),  con  F_m(T) = 1 / (1 + β/T)
+  (F_m(T) reduce efectivamente ρ a T altas por acoplamiento de masa-temperatura)
+
+Modelos:
+  Estándar:     H^2 = C * ρ_rad(a)
+  TMT-regulado: H^2 = C * ρ_eff(a) * [ 1 - ρ_eff(a) / ρ_c(T(a)) ]
+
+Salida: dos gráficas (a(t), ρ(t)) comparando singularidad vs. rebote TMT.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ---------------- Parámetros adimensionales ----------------
+C       = 1.0          # (8πG/3) normalizada
+rho0    = 1.0          # escala ρ radiación
+rho_c0  = 100.0        # cota base de densidad
+T_ref   = 1.0          # T(a=1)
+beta_K  = np.pi/10.0   # β ≈ 0.314 (adimensional aquí)
+use_regulator = "A"    # "A" -> ρ_c = ρ_c0/(1+β/T),  "B" -> ρ_c = ρ_c0*(1+β/T)
+use_mass_EoS  = True   # True para usar ρ_eff con F_m(T), False para ρ_rad pura
+
+# ---------------- Campos auxiliares ----------------
+def T_of_a(a):
+    return T_ref / np.maximum(a, 1e-12)
+
+def m_of_T(T):
+    # m0=1 en unidades adimensionales
+    return 1.0 * (1.0 + beta_K / np.maximum(T, 1e-12))
+
+def Fm_of_T(T):
+    # Factor EoS efectivo por acoplamiento masa-temperatura
+    # (suaviza ρ a altas T; puedes cambiar la forma si lo deseas)
+    return 1.0 / (1.0 + beta_K / np.maximum(T, 1e-12))
+
+def rho_c_of_T(T):
+    if use_regulator.upper() == "A":
+        return rho_c0 / (1.0 + beta_K / np.maximum(T, 1e-12))
+    else:
+        return rho_c0 * (1.0 + beta_K / np.maximum(T, 1e-12))
+
+# ---------------- Densidad ----------------
+def rho_rad(a):
+    return rho0 * a**(-4)
+
+def rho_eff(a):
+    T = T_of_a(a)
+    if use_mass_EoS:
+        return rho_rad(a) * Fm_of_T(T)
+    return rho_rad(a)
+
+# ---------------- H(a) ----------------
+def H_standard(a):
+    return np.sqrt(C * rho_rad(a))
+
+def H_TMT(a):
+    r  = rho_eff(a)
+    T  = T_of_a(a)
+    rc = rho_c_of_T(T)
+    term = 1.0 - r/rc
+    return np.sqrt(np.maximum(C * r * np.maximum(term, 0.0), 0.0))
+
+# ---------------- Integrador RK4 de a(t) ----------------
+def integrate_a(da_dt, a0, t0, t1, dt):
+    ts, axs = [t0], [a0]
+    t, a = t0, a0
+    n = int(np.ceil((t1 - t0)/dt))
+    for _ in range(n):
+        k1 = da_dt(a)
+        k2 = da_dt(a + 0.5*dt*k1)
+        k3 = da_dt(a + 0.5*dt*k2)
+        k4 = da_dt(a + dt*k3)
+        a_next = a + (dt/6.0)*(k1 + 2*k2 + 2*k3 + k4)
+        t += dt
+        if (a_next <= 0) or (not np.isfinite(a_next)):
+            break
+        a = a_next
+        ts.append(t); axs.append(a)
+    return np.array(ts), np.array(axs)
+
+# ---------------- Simulaciones ----------------
+a_ref = 1.0
+dt    = 1e-3
+
+# Estándar (singularidad)
+tA_b, aA_b = integrate_a(lambda a: -a*H_standard(a), a_ref, 0.0, -0.5, -dt)
+tA_f, aA_f = integrate_a(lambda a:  a*H_standard(a), a_ref, 0.0,  0.5,  dt)
+tA = np.concatenate([tA_b[::-1], tA_f[1:]])
+aA = np.concatenate([aA_b[::-1], aA_f[1:]])
+rhoA = rho_rad(aA)
+
+# TMT (rebote)
+# Estimación inicial de a_min con rc efectivo cerca de a=1:
+rc_eff   = rho_c_of_T(T_of_a(1.0))
+a_min_est = (rho0/rc_eff)**0.25
+# Si usamos EoS con Fm(T), corrige la estimación:
+if use_mass_EoS:
+    a_min_est = (rho0/ (rc_eff * Fm_of_T(T_of_a(a_min_est))))**0.25
+
+a_start = a_min_est*(1+1e-4)
+tB_b, aB_b = integrate_a(lambda a: -a*H_TMT(a), a_start, 0.0, -0.5, -dt)
+tB_f, aB_f = integrate_a(lambda a:  a*H_TMT(a), a_start, 0.0,  0.5,  dt)
+tB = np.concatenate([tB_b[::-1], np.array([0.0]), tB_f[1:]])
+aB = np.concatenate([aB_b[::-1], np.array([a_min_est]), aB_f[1:]])
+
+rhoB_raw = rho_eff(aB)
+rhoB_cap = np.minimum(rhoB_raw, rho_c_of_T(T_of_a(aB)))  # aplicar cota punto a punto
+
+# ---------------- Gráficas ----------------
+plt.figure(figsize=(8,5))
+plt.plot(tA, aA, label="Estándar: singularidad")
+plt.plot(tB, aB, label=f"TMT: rebote (ρ_c {use_regulator}, EoS={'ON' if use_mass_EoS else 'OFF'})")
+plt.xlabel("tiempo (adimensional)")
+plt.ylabel("factor de escala a(t)")
+plt.title("Singularidad vs. Rebote TMT (regulador y m(T) explícitos)")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(8,5))
+plt.plot(tA, rhoA, label="Estándar: ρ→∞")
+plt.plot(tB, rhoB_cap, label="TMT: ρ ≤ ρ_c(T)")
+plt.xlabel("tiempo (adimensional)")
+plt.ylabel("densidad ρ(t) (adimensional)")
+plt.title("Densidad: divergente (estándar) vs. acotada (TMT)")
+plt.yscale("log")
+plt.legend()
+plt.tight_layout()
+plt.show()
