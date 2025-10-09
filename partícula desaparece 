@@ -1,0 +1,113 @@
+# sim_tmt_disappearance.py
+# ------------------------------------------------------------
+# Simulación: la partícula "desaparece" al enfriar en TMT
+# (N constante; cae el acoplamiento por masa efectiva baja)
+#
+# m_eff(T) = m0 * T/(T + beta)
+# Dos detectores independientes: óptico y magnético.
+# Perfil térmico: alto -> rampa abajo -> valle frío -> rampa arriba.
+# Guarda figuras y CSV en el directorio actual.
+# ------------------------------------------------------------
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+np.random.seed(42)
+
+# ---------------- Parámetros ----------------
+T_high = 1.0
+T_low  = 0.01
+beta   = 0.2        # controla qué tan rápido cae m_eff con T
+m0     = 1.0
+
+# Detectores
+k_opt, sigma_opt = 1.0, 0.02
+k_mag, sigma_mag = 0.8, 0.02
+threshold_opt = 0.08
+threshold_mag = 0.06
+
+# Tiempo
+t_end = 100.0
+dt    = 0.1
+t = np.arange(0, t_end + dt, dt)
+
+# ---------------- Perfil de temperatura ----------------
+T = np.zeros_like(t)
+for i, ti in enumerate(t):
+    if ti < 10:
+        T[i] = T_high
+    elif ti < 50:
+        frac = (ti - 10)/(50 - 10)
+        T[i] = T_high + (T_low - T_high)*frac
+    elif ti < 70:
+        T[i] = T_low
+    else:
+        frac = (ti - 70)/(100 - 70)
+        T[i] = T_low + (T_high - T_low)*frac
+
+# ---------------- Modelo TMT ----------------
+def m_eff(T):
+    return m0 * (T/(T + beta))
+
+m = m_eff(T)
+N_true = np.ones_like(t)  # la partícula sigue ahí (constante)
+
+# Señales con ruido
+S_opt = k_opt*m + np.random.normal(0, sigma_opt, size=t.shape)
+S_mag = k_mag*m + np.random.normal(0, sigma_mag, size=t.shape)
+
+detected_opt = (S_opt >= threshold_opt).astype(int)
+detected_mag = (S_mag >= threshold_mag).astype(int)
+
+# ---------------- Figuras ----------------
+plt.figure(figsize=(9,5))
+plt.plot(t, T, label="T(t)")
+plt.xlabel("tiempo"); plt.ylabel("Temperatura (u.a.)")
+plt.title("Perfil de temperatura")
+plt.legend(); plt.tight_layout()
+plt.savefig("sim_T_profile.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, m, label=r"$m_{\rm eff}(T) = m_0 \frac{T}{T+\beta}$")
+plt.xlabel("tiempo"); plt.ylabel("masa efectiva (u.a.)")
+plt.title("Masa efectiva vs. tiempo (TMT)")
+plt.legend(); plt.tight_layout()
+plt.savefig("sim_m_eff.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, S_opt, label="Señal óptica")
+plt.axhline(threshold_opt, linestyle="--", label="umbral óptico")
+plt.xlabel("tiempo"); plt.ylabel("Señal óptica (u.a.)")
+plt.title("Detector óptico: señal vs. tiempo")
+plt.legend(); plt.tight_layout()
+plt.savefig("sim_signal_opt.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, S_mag, label="Señal magnética")
+plt.axhline(threshold_mag, linestyle="--", label="umbral magnético")
+plt.xlabel("tiempo"); plt.ylabel("Señal magnética (u.a.)")
+plt.title("Detector magnético: señal vs. tiempo")
+plt.legend(); plt.tight_layout()
+plt.savefig("sim_signal_mag.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, detected_opt, label="Detección óptica (0/1)")
+plt.plot(t, detected_mag, label="Detección magnética (0/1)")
+plt.xlabel("tiempo"); plt.ylabel("detección (0/1)")
+plt.title("Visibilidad: desaparece al enfriar y reaparece al calentar")
+plt.legend(); plt.tight_layout()
+plt.savefig("sim_visibility_flags.png"); plt.close()
+
+# ---------------- CSV ----------------
+df = pd.DataFrame({
+    "t": t,
+    "T": T,
+    "m_eff": m,
+    "S_opt": S_opt,
+    "S_mag": S_mag,
+    "det_opt": detected_opt,
+    "det_mag": detected_mag,
+    "N_true": N_true
+})
+df.to_csv("sim_TMT_disappearance.csv", index=False)
