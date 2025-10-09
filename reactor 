@@ -1,0 +1,214 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Parámetros
+R = 1.0  # Radio [m]
+N = 30  # Puntos por eje
+dx = 2 * R / (N - 1)
+x = y = z = np.linspace(-R, R, N)
+X, Y, Z = np.meshgrid(x, y, z)
+r = np.sqrt(X**2 + Y**2 + Z**2)
+mask = r <= R
+
+C_v = 1e6  # [J/keV/m^3]
+chi_std = 0.1  # [m^2/s]
+chi_tmt = 0.05
+k_turb_std = 0.01  # Turbulencia estándar [m^2/s/keV]
+k_turb_tmt = 0.005  # Turbulencia TMT
+k_rad_std = 0.1  # [W/keV^2/m^3]
+k_rad_tmt = 0.05
+k_cond = 0.05  # [W/keV/m^3]
+k_cool_base = 0.5  # [W/keV/m^3]
+k_tg_std = 0.1  # [W/keV/m^3]
+k_tg_tmt = 0.3
+m_0 = 1e20  # [partículas/m^3]
+T_edge = 0.001  # [keV]
+alpha_fusion = 0.015  # [W/keV^2/m^6]
+T_ign = 5  # [keV]
+T_target = 15  # [keV]
+t_span = (0, 20)
+t_eval = np.linspace(0, 20, 200)
+dt = t_eval[1] - t_eval[0]
+
+# Optimización de beta y K_p
+beta_values = [500, 1000, 1500]
+Kp_values = [0.3, 0.6, 0.9]
+P_u = 5.0
+
+# Densidad
+def density(T, beta):
+    m_T = m_0 * (1 + beta / np.clip(T, 1e-3, None))
+    return m_0 / m_T
+
+# Gradiente y laplaciano
+def compute_gradient(T):
+    grad_x = np.zeros_like(T)
+    grad_y = np.zeros_like(T)
+    grad_z = np.zeros_like(T)
+    for i in range(1, N-1):
+        for j in range(1, N-1):
+            for k in range(1, N-1):
+                if mask[i,j,k]:
+                    grad_x[i,j,k] = (T[i+1,j,k] - T[i-1,j,k]) / (2*dx)
+                    grad_y[i,j,k] = (T[i,j+1,k] - T[i,j-1,k]) / (2*dx)
+                    grad_z[i,j,k] = (T[i,j,k+1] - T[i,j,k-1]) / (2*dx)
+    return grad_x, grad_y, grad_z
+
+def laplacian(T):
+    lap = np.zeros_like(T)
+    for i in range(1, N-1):
+        for j in range(1, N-1):
+            for k in range(1, N-1):
+                if mask[i,j,k]:
+                    lap[i,j,k] = (T[i+1,j,k] + T[i-1,j,k] - 2*T[i,j,k]) / dx**2 + \
+                                 (T[i,j+1,k] + T[i,j-1,k] - 2*T[i,j,k]) / dx**2 + \
+                                 (T[i,j,k+1] + T[i,j,k-1] - 2*T[i,j,k]) / dx**2
+    return lap
+
+# Simulación
+def simulate_case(label, chi, k_rad, k_tg, k_turb, beta, Kp, use_pid=False, use_fusion=False):
+    Ki = 2 * Kp / P_u
+    Kd = Kp * P_u / 8
+    T = 10 * np.exp(-10 * r**2) + T_edge
+    T[~mask] = T_edge
+    T_history = []
+    P_net_history = []
+    integral_error = [0]
+    last_error = [0]
+    
+    for t in t_eval:
+        if use_pid:
+            error = T_target - T[N//2, N//2, N//2]
+            integral_error.append(integral_error[-1] + error * dt)
+            derivative_error = (error - last_error[-1]) / dt if t > 0 else 0
+            k_cool = k_cool_base + Kp * error + Ki * integral_error[-1] + Kd * derivative_error
+            k_cool = max(0, min(k_cool, 2 * k_cool_base))
+            last_error.append(error)
+        else:
+            k_cool = k_cool_base
+        
+        n = density(T, beta)
+        grad_x, grad_y, grad_z = compute_gradient(T)
+        grad_T = np.sqrt(grad_x**2 + grad_y**2 + grad_z**2)
+        chi_eff = chi + k_turb * grad_T
+        P_rad = k_rad * T**2
+        P_cond = k_cond * T
+        P_cool = np.zeros_like(T)
+        P_cool[r > R - dx/2] = k_cool * (T[r > R - dx/2] - T_edge)
+        P_fusion = alpha_fusion * n**2 * T**2 * (T > T_ign).astype(float) if use_fusion else 0
+        P_thermo_geo = k_tg * (beta / np.clip(T, 1e-3, None)**2) * grad_T
+        P_net = P_fusion - P_rad - P_cond - P_cool + P_thermo_geo
+        P_net_history.append(P_net[N//2, N//2, N//2])
+        
+        dTdt = (chi_eff * laplacian(T) + P_net) / C_v
+        T = T + dt * dTdt
+        T[r >= R] = T_edge
+        T = np.clip(T, T_edge, None)
+        T_history.append(T.copy())
+    
+    return np.array(T_history), P_net_history
+
+# Optimización
+best_beta = 1000
+best_Kp = 0.6
+min_error = np.inf
+results = {}
+P_net_results = {}
+errors = []
+
+for beta in beta_values:
+    for Kp in Kp_values:
+        label = f"TMT_PID_Fusión_β={beta}_Kp={Kp}"
+        T_history, P_net = simulate_case(label, chi_tmt, k_rad_tmt, k_tg_tmt, k_turb_tmt, beta, Kp, True, True)
+        T_core = T_history[:, N//2, N//2, N//2]
+        error = np.mean(np.abs(T_core - T_target)) + np.std(T_core)
+        errors.append((beta, Kp, error))
+        if error < min_error:
+            min_error = error
+            best_beta = beta
+            best_Kp = Kp
+            results["TMT con PID + Fusión"] = T_history
+            P_net_results["TMT con PID + Fusión"] = P_net
+
+# Casos adicionales
+cases = [
+    ("Estándar con PID + Fusión", chi_std, k_rad_std, k_tg_std, k_turb_std, best_beta, best_Kp, True, True),
+    ("TMT sin PID", chi_tmt, k_rad_tmt, k_tg_tmt, k_turb_tmt, best_beta, best_Kp, False, False),
+]
+for label, chi, k_rad, k_tg, k_turb, beta, Kp, use_pid, use_fusion in cases:
+    T_history, P_net = simulate_case(label, chi, k_rad, k_tg, k_turb, beta, Kp, use_pid, use_fusion)
+    results[label] = T_history
+    P_net_results[label] = P_net
+
+# Visualización
+plt.figure(figsize=(12, 10))
+plt.subplot(2, 1, 1)
+for label, T_history in results.items():
+    T_core = T_history[:, N//2, N//2, N//2]
+    plt.plot(t_eval, T_core, label=label)
+plt.xlabel("Tiempo [s]")
+plt.ylabel("T núcleo [keV]")
+plt.title(f"Evolución de T(0,0,0,t) (β={best_beta}, Kp={best_Kp})")
+plt.legend()
+plt.grid()
+
+plt.subplot(2, 1, 2)
+for label, P_net in P_net_results.items():
+    plt.plot(t_eval[:len(P_net)], P_net, label=label)
+plt.xlabel("Tiempo [s]")
+plt.ylabel("Balance de Potencia Neta [W/m^3]")
+plt.title("Balance de Potencia Neta (Núcleo)")
+plt.legend()
+plt.grid()
+plt.tight_layout()
+plt.show()
+
+# Perfil radial
+plt.figure(figsize=(8, 5))
+t_snapshots = [0, 10, 20]
+for label, T_history in results.items():
+    for t_idx, t_val in enumerate(t_snapshots):
+        T_slice = T_history[int(t_val/dt), :, N//2, N//2]
+        plt.plot(x, T_slice, label=f"{label} t={t_val}s")
+plt.xlabel("x [m]")
+plt.ylabel("Temperatura [keV]")
+plt.title("Perfil T(x,y=0,z=0,t)")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Exportar CSV
+df = pd.DataFrame({"Tiempo": t_eval})
+for label, T_history in results.items():
+    df[f"T_núcleo_{label}"] = T_history[:, N//2, N//2, N//2]
+for label, P_net in P_net_results.items():
+    df[f"P_net_{label}"] = P_net + [P_net[-1]] * (len(t_eval) - len(P_net))
+df.to_csv("reactor_simulation_3d_tmt_optimized.csv", index=False)
+
+# Análisis de ignición
+alpha_values = np.linspace(0.005, 0.025, 5)
+ignition_times = {"Estándar": [], "TMT": []}
+for alpha in alpha_values:
+    alpha_fusion = alpha
+    for label, chi, k_rad, k_tg, k_turb in [
+        ("Estándar", chi_std, k_rad_std, k_tg_std, k_turb_std),
+        ("TMT", chi_tmt, k_rad_tmt, k_tg_tmt, k_turb_tmt)
+    ]:
+        T_history, _ = simulate_case(label, chi, k_rad, k_tg, k_turb, best_beta, best_Kp, True, True)
+        T_core = T_history[:, N//2, N//2, N//2]
+        ignition_time = t_eval[np.where(T_core > 20)[0][0]] if np.any(T_core > 20) else np.inf
+        ignition_times[label].append(ignition_time)
+
+plt.figure(figsize=(8, 5))
+for label in ignition_times:
+    plt.plot(alpha_values, ignition_times[label], label=label, marker='o')
+plt.xlabel("Ganancia de Fusión (α)")
+plt.ylabel("Tiempo para Ignición (T_núcleo > 20 keV) [s]")
+plt.title("Tiempo de Ignición vs. Ganancia de Fusión")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Imprimir optimización
+print(f"Mejor β: {best_beta}, Mejor Kp: {best_Kp}, Error: {min_error:.2f}")
