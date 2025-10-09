@@ -1,0 +1,147 @@
+# sim_compare_tmt_vs_classic.py
+# ------------------------------------------------------------
+# Comparación: TMT (masa baja con T) vs. Clásico (masa constante)
+# Objetivo: sólo en TMT la señal cae bajo el umbral en el valle frío.
+# Guarda figuras y CSV en el directorio actual.
+# ------------------------------------------------------------
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+np.random.seed(7)
+
+# Parámetros compartidos
+T_high = 1.0
+T_low  = 0.01
+beta   = 0.2
+m0     = 1.0
+
+k_opt, sigma_opt = 1.0, 0.02
+k_mag, sigma_mag = 0.8, 0.02
+threshold_opt = 0.08
+threshold_mag = 0.06
+
+t_end = 100.0
+dt    = 0.1
+t = np.arange(0, t_end + dt, dt)
+
+# Perfil de temperatura
+T = np.zeros_like(t)
+for i, ti in enumerate(t):
+    if ti < 10:
+        T[i] = T_high
+    elif ti < 50:
+        frac = (ti - 10)/(50 - 10)
+        T[i] = T_high + (T_low - T_high)*frac
+    elif ti < 70:
+        T[i] = T_low
+    else:
+        frac = (ti - 70)/(100 - 70)
+        T[i] = T_low + (T_high - T_low)*frac
+
+# Modelos
+def m_eff_TMT(T):
+    return m0 * (T/(T + beta))
+
+def m_eff_classic(T):
+    return m0 * np.ones_like(T)
+
+m_TMT = m_eff_TMT(T)
+m_CL  = m_eff_classic(T)
+
+# Señales (ruido independiente por modelo)
+S_opt_TMT = k_opt*m_TMT + np.random.normal(0, sigma_opt, size=t.shape)
+S_opt_CL  = k_opt*m_CL  + np.random.normal(0, sigma_opt, size=t.shape)
+S_mag_TMT = k_mag*m_TMT + np.random.normal(0, sigma_mag, size=t.shape)
+S_mag_CL  = k_mag*m_CL  + np.random.normal(0, sigma_mag, size=t.shape)
+
+det_opt_TMT = (S_opt_TMT >= threshold_opt).astype(int)
+det_opt_CL  = (S_opt_CL  >= threshold_opt).astype(int)
+det_mag_TMT = (S_mag_TMT >= threshold_mag).astype(int)
+det_mag_CL  = (S_mag_CL  >= threshold_mag).astype(int)
+
+# Figuras
+plt.figure(figsize=(9,5))
+plt.plot(t, T, label="T(t)")
+plt.xlabel("tiempo"); plt.ylabel("Temperatura (u.a.)")
+plt.title("Perfil de temperatura (común)")
+plt.legend(); plt.tight_layout()
+plt.savefig("comp_T_profile.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, m_TMT, label="m_eff (TMT)")
+plt.plot(t, m_CL,  label="m_eff (Clásico)")
+plt.xlabel("tiempo"); plt.ylabel("masa efectiva (u.a.)")
+plt.title("Masa efectiva: TMT vs. Clásico")
+plt.legend(); plt.tight_layout()
+plt.savefig("comp_m_eff.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, S_opt_TMT, label="Óptica TMT")
+plt.plot(t, S_opt_CL,  label="Óptica Clásico")
+plt.axhline(threshold_opt, linestyle="--", label="umbral óptico")
+plt.xlabel("tiempo"); plt.ylabel("Señal óptica (u.a.)")
+plt.title("Detector óptico: TMT vs. Clásico")
+plt.legend(); plt.tight_layout()
+plt.savefig("comp_signal_opt.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, S_mag_TMT, label="Magnético TMT")
+plt.plot(t, S_mag_CL,  label="Magnético Clásico")
+plt.axhline(threshold_mag, linestyle="--", label="umbral magnético")
+plt.xlabel("tiempo"); plt.ylabel("Señal magnética (u.a.)")
+plt.title("Detector magnético: TMT vs. Clásico")
+plt.legend(); plt.tight_layout()
+plt.savefig("comp_signal_mag.png"); plt.close()
+
+plt.figure(figsize=(9,5))
+plt.plot(t, det_opt_TMT, label="Detección óptica TMT (0/1)")
+plt.plot(t, det_opt_CL,  label="Detección óptica Clásico (0/1)")
+plt.plot(t, det_mag_TMT, label="Detección magnética TMT (0/1)")
+plt.plot(t, det_mag_CL,  label="Detección magnética Clásico (0/1)")
+plt.xlabel("tiempo"); plt.ylabel("detección (0/1)")
+plt.title("Visibilidad comparada: TMT vs. Clásico")
+plt.legend(); plt.tight_layout()
+plt.savefig("comp_visibility_flags.png"); plt.close()
+
+# CSVs
+def frac_detected(flags, mask):
+    return flags[mask].mean()
+
+mask_high = t < 10
+mask_ramp_down = (t >= 10) & (t < 50)
+mask_low = (t >= 50) & (t < 70)
+mask_ramp_up = (t >= 70)
+
+df_summary = pd.DataFrame({
+    "phase": ["high", "ramp_down", "low_hold", "ramp_up"],
+    "opt_TMT": [frac_detected(det_opt_TMT, mask_high),
+                frac_detected(det_opt_TMT, mask_ramp_down),
+                frac_detected(det_opt_TMT, mask_low),
+                frac_detected(det_opt_TMT, mask_ramp_up)],
+    "opt_CL":  [frac_detected(det_opt_CL,  mask_high),
+                frac_detected(det_opt_CL,  mask_ramp_down),
+                frac_detected(det_opt_CL,  mask_low),
+                frac_detected(det_opt_CL,  mask_ramp_up)],
+    "mag_TMT": [frac_detected(det_mag_TMT, mask_high),
+                frac_detected(det_mag_TMT, mask_ramp_down),
+                frac_detected(det_mag_TMT, mask_low),
+                frac_detected(det_mag_TMT, mask_ramp_up)],
+    "mag_CL":  [frac_detected(det_mag_CL,  mask_high),
+                frac_detected(det_mag_CL,  mask_ramp_down),
+                frac_detected(det_mag_CL,  mask_low),
+                frac_detected(det_mag_CL,  mask_ramp_up)],
+})
+df_summary.to_csv("comp_summary.csv", index=False)
+
+df_all = pd.DataFrame({
+    "t": t, "T": T,
+    "m_TMT": m_TMT, "m_CL": m_CL,
+    "S_opt_TMT": S_opt_TMT, "S_opt_CL": S_opt_CL,
+    "S_mag_TMT": S_mag_TMT, "S_mag_CL": S_mag_CL,
+    "det_opt_TMT": det_opt_TMT, "det_opt_CL": det_opt_CL,
+    "det_mag_TMT": det_mag_TMT, "det_mag_CL": det_mag_CL
+})
+df_all.to_csv("comp_timeseries.csv", index=False)
+```0
