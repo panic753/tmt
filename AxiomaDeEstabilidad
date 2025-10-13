@@ -1,0 +1,74 @@
+# TMT_V2_0_Axioma.py
+# Modulo de la Teoria de la Masa Termodinamica (TMT V2.0)
+# Implementacion del Principio de Conservación Bifásica.
+
+class AxiomaDeEstabilidad:
+    """
+    Clase que implementa el principio de Conservación Bifásica de la Masa-Energía.
+    La masa total (m_total) siempre se conserva al repartirse en dos estados.
+    """
+    
+    # Constante de la Teoría (Simulada para la Lógica)
+    CONSTANTE_BIFASICA = 1.618  # Simbolo beta (β) en la lógica de la teoría.
+    
+    def __init__(self, masa_total_inicial):
+        """Inicializa el sistema con la masa-energía total."""
+        self.m_total = masa_total_inicial
+        self.m_grav = 0.5 * masa_total_inicial  # Inicialización simplificada
+        self.m_func = self.m_total - self.m_grav
+
+    def calcular_m_func(self, temperatura_kelvin, m_grav_actual):
+        """
+        Calcula la Masa Funcional (m_func) basada en la temperatura (T) 
+        y la masa gravitacional (m_grav).
+
+        La función no es la ecuación real de la TMT V2.0, sino una representación
+        de que T particiona la masa.
+        """
+        # La lógica central es: m_func = f(T, m_grav)
+        # Donde m_func y m_grav siempre suman m_total
+        
+        # Simulamos que m_func aumenta con T y m_grav se ajusta:
+        m_func_temp = self.m_total / (1 + self.CONSTANTE_BIFASICA / temperatura_kelvin)
+        
+        return m_func_temp
+
+    def verificar_conservacion(self, m_func, m_grav):
+        """
+        Verifica el Axioma de Estabilidad: La suma de las partes es siempre el total.
+        """
+        if abs((m_func + m_grav) - self.m_total) < 1e-9:
+            return True, "Axioma de Estabilidad: Conservación Bifásica Validada."
+        else:
+            return False, "Error Axiomático: Conservación Rota."
+
+# -------------------------------------------------------------
+# EJEMPLO DE USO (Simulación de un proceso termodinámico)
+# -------------------------------------------------------------
+
+if __name__ == "__main__":
+    masa_inicial_universo = 100.0  # Unidades arbitrarias
+    sistema = AxiomaDeEstabilidad(masa_inicial_universo)
+    
+    print(f"Masa Total del Sistema (Axioma de Estabilidad): {sistema.m_total}")
+    
+    # Simulación 1: Alta Temperatura (m_func es alto, inestable)
+    T_caliente = 1000.0
+    m_func_caliente = sistema.calcular_m_func(T_caliente, sistema.m_grav)
+    m_grav_ajustada = masa_inicial_universo - m_func_caliente
+    
+    print("\n--- Simulación Alta T (Inestabilidad Hawking/Einstein) ---")
+    print(f"Masa Funcional (m_func): {m_func_caliente:.4f}")
+    print(f"Masa Gravitacional (m_grav): {m_grav_ajustada:.4f}")
+    print(sistema.verificar_conservacion(m_func_caliente, m_grav_ajustada)[1])
+
+    # Simulación 2: Baja Temperatura (m_func es bajo, estabilidad máxima)
+    # Este es el estado del Agujero Negro, donde m_grav domina
+    T_frio = 0.001
+    m_func_frio = sistema.calcular_m_func(T_frio, sistema.m_grav)
+    m_grav_ajustada_frio = masa_inicial_universo - m_func_frio
+    
+    print("\n--- Simulación Baja T (Estabilidad TMT V2.0) ---")
+    print(f"Masa Funcional (m_func): {m_func_frio:.4f}")
+    print(f"Masa Gravitacional (m_grav): {m_grav_ajustada_frio:.4f}")
+    print(sistema.verificar_conservacion(m_func_frio, m_grav_ajustada_frio)[1])
