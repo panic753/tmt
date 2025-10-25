@@ -1,0 +1,64 @@
+# lcg_coercion.py
+# Implementación del núcleo lógico de la Ley de Coherencia Geométrica (LCG)
+# Ecuación Coercitiva del Nacimiento, actualizada con el Factor de Finitud Neutrínica.
+# V2.0: Ajuste de variables para demostrar el "Axioma de Equilibrio" (Proporcionalidad = 1).
+
+def calcular_coerción_lcg(M_func, g_local, P_coh, F_nu, T_sim):
+    """
+    Calcula la Coerción del Sistema (Lado Izquierdo) y el Potencial de Nacimiento Coercido (Lado Derecho).
+    
+    La LCG se verifica si Lado_Izquierdo es proporcional a Lado_Derecho:
+    (M_func * g_local)  ∝  (P_coh / (F_nu * T_sim))
+    
+    Variables:
+    M_func (Masa Funcional): Identidad fluida, según el Postulado de la Identidad Fluida (PIF).
+    g_local (Gravedad Local): La geometría del sistema.
+    P_coh (Potencial de Coherencia): El requisito de estabilidad impuesto por la LCG.
+    F_nu (Factor de Finitud Neutrínica): v_neutrino / v_escape. **El agente de coerción**.
+    T_sim (Tiempo de Simetría): El factor temporal de ruptura de simetría/enfriamiento.
+    """
+    # Lado izquierdo de la proporción: Coerción del Sistema (M_func * g_local)
+    Lado_Izquierdo = M_func * g_local
+
+    # Si el Factor de Finitud Neutrínica es cero o negativo, el sistema colapsa (singularidad).
+    if F_nu <= 0.001:
+        # La coerción geométrica fuerza una divergencia: Colapso Ineludible (Agujero Negro)
+        return Lado_Izquierdo, float('inf')
+
+    # Lado derecho de la proporción: Potencial de Nacimiento Coercido (P_coh / (F_nu * T_sim))
+    Lado_Derecho = P_coh / (F_nu * T_sim)
+
+    return Lado_Izquierdo, Lado_Derecho
+
+# --- Escenario de COHERENCIA Y EQUILIBRIO (Nacimiento Estable k=1) ---
+# Hemos ajustado P_coh para que la proporción sea 1.0 (98.0 / 98.0).
+M_ejemplo = 10.0   # Masa funcional (PIF)
+g_ejemplo = 9.8    # Gravedad (e.g., Tierra)
+P_ejemplo = 441.0  # ¡AJUSTADO! 441.0 / (1.5 * 3.0) = 98.0. Demostrando el balance perfecto.
+F_nu_estable = 1.5 # El neutrino escapa (F_nu > 1).
+T_ejemplo = 3.0    # Tiempo de Simetría
+
+Izq_estable, Der_estable = calcular_coerción_lcg(M_ejemplo, g_ejemplo, P_ejemplo, F_nu_estable, T_ejemplo)
+
+print("--- Escenario LCG Coherente (EQUILIBRIO k=1) ---")
+print(f"Factor de Finitud Neutrínica (F_nu): {F_nu_estable}")
+print(f"Lado Izquierdo (M_func * g_local): {Izq_estable:.3f}")
+print(f"Lado Derecho (P_coh / (F_nu * T_sim)): {Der_estable:.3f}")
+print(f"Proporcionalidad LCG (Constante de Equilibrio 'k'): {abs(Izq_estable / Der_estable):.3f}")
+
+
+# --- Escenario de Colapso (Agujero Negro - Límite TOV) ---
+# Se incumple LCG: F_nu -> 0 (el neutrino es capturado, v_nu ~ v_escape)
+M_ejemplo = 10.0   # Mismo sistema
+g_ejemplo = 9.8
+P_ejemplo = 441.0  # Mismo potencial
+T_ejemplo = 3.0
+F_nu_colapso = 0.0000001 # El neutrino es atrapado
+
+Izq_colapso, Der_colapso = calcular_coerción_lcg(M_ejemplo, g_ejemplo, P_ejemplo, F_nu_colapso, T_ejemplo)
+
+print("\n--- Escenario de Colapso (Agujero Negro - Límite TOV) ---")
+print(f"Factor de Finitud Neutrínica (F_nu): {F_nu_colapso}")
+print(f"Lado Izquierdo (M_func * g_local): {Izq_colapso:.3f}")
+print(f"Lado Derecho (Potencial de Nacimiento Coercido): {Der_colapso}")
+print("Resultado: La divergencia a 'inf' (Infinito) es el colapso de la finitud.")
